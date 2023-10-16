@@ -1,0 +1,6 @@
+logs
+**/logs
+hlstmp
+.idea
+
+**/.idea

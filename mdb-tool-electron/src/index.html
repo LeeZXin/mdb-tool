@@ -1,0 +1,268 @@
+<html>
+<head>
+    <meta charset="UTF-8"/>
+    <title>mdb-tool</title>
+    <style>
+        #file-btn, #excel-btn, #search-btn {
+            text-align: center;
+            width: 110px;
+            height: 36px;
+            line-height: 36px;
+            background-color: #1e90ff;
+            cursor: pointer;
+            color: white;
+            font-size: 14px;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        body {
+            background-color: white;
+            padding: 20px;
+        }
+
+        #file-warn {
+            font-size: 12px;
+            color: green;
+            line-height: 20px;
+            padding: 0 10px;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+            overflow: hidden;
+        }
+
+        #excel-btn {
+            margin-top: 10px;
+        }
+
+        .flex-div {
+            display: flex;
+            align-items: center;
+        }
+
+        .search-input {
+            display: flex;
+            align-items: center;
+            font-size: 13px;
+            padding: 0 10px;
+        }
+
+        .search-input > input {
+            height: 30px;
+            line-height: 30px;
+            padding-left: 10px;
+            width: 120px;
+        }
+
+        .search-input > label {
+            line-height: 30px;
+            width: 48px;
+        }
+
+        table {
+            width: 100%;
+            border: 1px solid lightgray;
+            border-top: unset;
+            background-color: #f0f0f0;
+            border-spacing: 0 !important;
+        }
+
+        .table-tr, .table-td {
+            padding: 0 !important;
+            margin: 0 !important;
+            border-spacing: 0 !important;
+            background-color: transparent;
+        }
+
+        .table-td {
+            line-height: 30px;
+            font-size: 14px;
+            text-align: center;
+            white-space: pre-wrap;
+            border-top: 1px solid lightgray;
+        }
+
+        .table-td + .table-td {
+            border-left: 1px solid lightgray;
+        }
+
+        table + table {
+            margin-top: 6px;
+        }
+
+        #search-table {
+            margin-top: 10px;
+        }
+
+        #search-warn {
+            font-size: 13px;
+            color: darkred;
+            margin-top: 10px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+<div class="flex-div">
+    <div id="file-btn">选择mdb文件</div>
+    <div id="file-warn">
+        <span>已选择文件: </span>
+        <span id="file-name"></span>
+    </div>
+</div>
+<div class="flex-div" style="margin-top: 10px">
+    <div id="search-btn">搜索</div>
+    <div class="search-input">
+        <label>字段: </label>
+        <input id="search-var"/>
+    </div>
+    <div class="search-input">
+        <label>值: </label>
+        <input id="search-val"/>
+    </div>
+</div>
+<div id="excel-btn">导出excel</div>
+<div id="search-warn">请稍后重试...</div>
+<div id="search-table">
+</div>
+<script>
+    const {dialog} = require('@electron/remote');
+    const childProcess = require("child_process");
+    const {readFile} = require("./utils");
+    const searchFailWarn = '搜索出错，请稍后重试';
+    const excelFailWarn = 'excel出错，请稍后重试';
+    let filePath = '';
+
+    function E(id) {
+        return document.getElementById(id);
+    }
+
+    function P(cmd) {
+        console.log(cmd);
+        return new Promise((resolve, reject) => {
+            childProcess.exec(cmd, (error, stdout, stderr) => {
+                if (error) {
+                    reject(error);
+                } else {
+                    closeSearchWarn();
+                    resolve();
+                }
+            });
+        })
+
+    }
+
+    E("file-btn").addEventListener('click', (event) => {
+        dialog.showOpenDialog({
+            title: '请选择mdb文件',   //对话框标题
+            filters: [    //过滤文件类型
+                {name: 'Mdb', extensions: ['mdb']},
+            ]
+        }).then(result => {
+            if (result.filePaths && result.filePaths.length > 0) {
+                filePath = result.filePaths[0];
+                E("file-name").innerText = filePath;
+            }
+        })
+    });
+
+    E("excel-btn").addEventListener('click', (event) => {
+        if (!filePath) {
+            return;
+        }
+        let v = E("search-var");
+        if (!v.value) {
+            return;
+        }
+        let vv = E("search-val");
+        if (!vv.value) {
+            return;
+        }
+        P(`mdb-tool.exe ${filePath} excel ${v.value} ${vv.value}`).catch(_ => {
+            showSearchWarn(excelFailWarn);
+        })
+    })
+
+
+    E("search-btn").addEventListener('click', (event) => {
+        closeSearchWarn();
+        E("search-table").innerHTML = '';
+        if (!filePath) {
+            return;
+        }
+        let v = E("search-var");
+        if (!v.value) {
+            return;
+        }
+        let vv = E("search-val");
+        if (!vv.value) {
+            return;
+        }
+        P(`mdb-tool.exe ${filePath} search ${v.value} ${vv.value}`).then((_) => {
+            readFile("search.json").then((data) => {
+                data = JSON.parse(data);
+                console.log(data);
+                data.forEach(t => {
+                    let colspan = t.varList.length;
+                    let table = document.createElement("table");
+                    let body = document.createElement("tbody");
+                    let tr = createTr();
+                    let td = createTd();
+                    td.innerText = t.tableName;
+                    td.setAttribute("colspan", colspan + "");
+                    td.style.textAlign = 'center';
+                    td.style.fontWeight = 'bold';
+                    tr.appendChild(td);
+                    body.appendChild(tr);
+                    tr = createTr();
+                    t.varList.forEach(v => {
+                        td = createTd();
+                        td.innerText = v;
+                        tr.appendChild(td);
+                    })
+                    body.appendChild(tr);
+                    t.data.forEach(d => {
+                        tr = createTr();
+                        t.varList.forEach(v => {
+                            td = createTd();
+                            td.innerText = d[v];
+                            tr.appendChild(td);
+                        });
+                        body.appendChild(tr);
+                    });
+                    table.appendChild(body);
+                    E("search-table").appendChild(table);
+                })
+            }).catch(err => {
+                console.log(err);
+            });
+        }).catch(_ => {
+            showSearchWarn(searchFailWarn);
+        });
+    })
+
+    function createTr() {
+        let tr = document.createElement("tr");
+        tr.className = "table-tr";
+        return tr;
+    }
+
+    function createTd() {
+        let td = document.createElement("td");
+        td.className = "table-td";
+        return td;
+    }
+
+    function showSearchWarn(msg) {
+        let e = E("search-warn");
+        e.style.display = 'block';
+        e.innerText = msg;
+    }
+
+    function closeSearchWarn() {
+        E("search-warn").style.display = 'none';
+    }
+
+</script>
+</body>
+</html>
